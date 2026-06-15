@@ -53,6 +53,7 @@ set(HEADER_FILES
     ${SOFA_POINTCLOUD_SRC}/components/selectors/PointCloudSelector.h
     ${SOFA_POINTCLOUD_SRC}/components/OctreeNode.h
     ${SOFA_POINTCLOUD_SRC}/components/selectors/PointCloudOctreeBaseSelector.h
+    ${SOFA_POINTCLOUD_SRC}/components/selectors/PointCloudOctreeSelector.h
     extlibs/liteviz-gs/liteviz/dataloader.h
     extlibs/liteviz-gs/liteviz/renderer.h
     extlibs/liteviz-gs/liteviz/shader.h
@@ -73,6 +74,7 @@ set(SOURCE_FILES
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudInspector.cpp
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudRendererCUDA.cpp
     ${SOFA_POINTCLOUD_SRC}/components/OctreeNode.cpp
+    ${SOFA_POINTCLOUD_SRC}/components/selectors/PointCloudOctreeSelector.cpp
 )
 
 # CUDA sources conditionnels
