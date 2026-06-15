@@ -43,6 +43,7 @@ set(HEADER_FILES
     ${SOFA_POINTCLOUD_SRC}/config.h.in
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudContainer.h
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudTransform.h
+    ${SOFA_POINTCLOUD_SRC}/components/utils.h
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudRenderer.h
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudRendererBackend.h
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudRendererCUDA.h
@@ -63,6 +64,7 @@ set(SOURCE_FILES
     ${SOFA_POINTCLOUD_SRC}/fwd.h
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudContainer.cpp
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudTransform.cpp
+    ${SOFA_POINTCLOUD_SRC}/components/utils.cpp
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudRenderer.cpp
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudVisualModel.cpp
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudInspector.cpp
