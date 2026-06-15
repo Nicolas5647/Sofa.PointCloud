@@ -74,8 +74,6 @@ public:
     Data<Eigen::MatrixXf> d_sphericalHarmonics;
 
     Data<type::vector<int>> d_indices;
-
-    size_t size();
     
  private:
 };
