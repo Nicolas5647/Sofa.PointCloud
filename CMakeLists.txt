@@ -51,6 +51,7 @@ set(HEADER_FILES
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudInspector.h
     ${SOFA_POINTCLOUD_SRC}/components/liteviz-dataloader.h
     ${SOFA_POINTCLOUD_SRC}/components/selectors/PointCloudSelector.h
+    ${SOFA_POINTCLOUD_SRC}/components/selectors/PointCloudLodSelector.h
     extlibs/liteviz-gs/liteviz/dataloader.h
     extlibs/liteviz-gs/liteviz/renderer.h
     extlibs/liteviz-gs/liteviz/shader.h
@@ -70,6 +71,7 @@ set(SOURCE_FILES
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudVisualModel.cpp
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudInspector.cpp
     ${SOFA_POINTCLOUD_SRC}/components/PointCloudRendererCUDA.cpp
+    ${SOFA_POINTCLOUD_SRC}/components/selectors/PointCloudLodSelector.cpp
 )
 
 # CUDA sources conditionnels
