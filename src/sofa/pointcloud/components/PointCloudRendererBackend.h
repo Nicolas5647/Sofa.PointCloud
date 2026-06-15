@@ -22,6 +22,7 @@
 #pragma once
 #include <GL/gl.h>
 #include <Eigen/Dense>
+#include <sofa/core/ObjectFactory.h>
 
 class BaseGLBuffer
 {
@@ -38,7 +39,27 @@ public:
 struct Plane {
     Eigen::Vector3f normal; // (a,b,c)
     float d;                // d
+
+    Plane(): normal(Eigen::Vector3f::Zero()), d(0) {}
+    Plane(const Eigen::Vector3f& normal, float d) : normal(normal), d(d) {}
+
+    static Eigen::Vector3f toEigenF(const sofa::type::Vec3& v) {
+        return Eigen::Vector3f(static_cast<float>(v[0]), 
+                                static_cast<float>(v[1]), 
+                                static_cast<float>(v[2]));
+    }
+
+    Plane(const sofa::type::Vec3& n, const sofa::type::Vec3& p) {
+        normal = toEigenF(n).normalized();
+        d = normal.dot(toEigenF(p)); 
+    }
+
+    bool operator==(const Plane& other) const {
+        return normal == other.normal && d == other.d;
+    } 
 };
+
+
 
 class PointCloudRendererBackend
 {
