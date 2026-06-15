@@ -27,7 +27,7 @@
 #include <sofa/component/visual/BaseCamera.h>
 #include <sofa/gl/GLSLShader.h>
 #include <sofa/helper/SelectableItem.h>
-#include <ostream>
+#include <sofa/pointcloud/components/selectors/PointCloudSelector.h>
 
 namespace sofa::pointcloud::components
 {
@@ -40,6 +40,8 @@ class PointCloudVisualModel : public sofa::core::visual::VisualModel {
 private:
     template<class T>
     using Link = core::objectmodel::SingleLink<PointCloudVisualModel, T, core::objectmodel::BaseLink::FLAG_STOREPATH>;
+    template<class T>
+    using MultiLink = core::objectmodel::MultiLink<PointCloudVisualModel, T, core::objectmodel::BaseLink::FLAG_STOREPATH>;
 
 public:
     SOFA_CLASS(PointCloudVisualModel, BaseObject);
@@ -47,7 +49,10 @@ public:
     PointCloudVisualModel();
     ~PointCloudVisualModel() override;
 
-    Link<PointCloudContainer> l_geometry;
+    MultiLink<PointCloudContainer> l_geometries;
+    Link<PointCloudSelector> l_selector;
+
+    GaussianData* data{nullptr};
 
     Data<type::vector<int>> d_indices;
     Data<type::vector<defaulttype::Rigid3Types::Coord>> d_frames;
@@ -59,11 +64,15 @@ public:
 
     void init() override;
     void doUpdateVisual(const sofa::core::visual::VisualParams* vparams) final;
+    void draw(const sofa::core::visual::VisualParams* vparams) override;
 
 public:
     void initTransform();
     type::vector<defaulttype::Rigid3Types::Coord> referenceFrames;
     type::vector<defaulttype::Rigid3Types::Coord> localToGlobalFrames;
+
+    bool updateLayout(BaseCamera* camera, float aspect);
+    bool updateSh(GaussianData* renderingData, int offset);
 
 };
 }

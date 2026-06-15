@@ -27,10 +27,13 @@
 #include <sofa/pointcloud/components/utils.h>
 #include <fstream>
 #include <filesystem>
+#include <algorithm>
 #include <Eigen/Dense>
 #include <sofa/helper/system/FileRepository.h>
 #include <sofa/pointcloud/components/PointCloudRendererBackend.h>
 #include <sofa/helper/ScopedAdvancedTimer.h>
+#include <iostream>
+#include <vector>
 
 namespace sofa::core
 {
@@ -174,7 +177,7 @@ void PointCloudRenderer::doDrawVisual(const sofa::core::visual::VisualParams* vp
     SCOPED_TIMER("PointCloud::doDrawVisual");
 
     auto viewport = vparams->viewport();
-
+    
     Eigen::Matrix4f projmat;
     Eigen::Matrix4f viewmat;
     Eigen::Matrix4d dprojmat;
@@ -188,8 +191,12 @@ void PointCloudRenderer::doDrawVisual(const sofa::core::visual::VisualParams* vp
     auto visualModels = l_targetNode->getTreeObjects<sofa::pointcloud::components::PointCloudVisualModel>();
     msg_info() << "Found " << visualModels.size() << " gaussian splats visual models.";
 
+    bool indiceChanged = false;
+    bool updateSh = false;
+    float aspect;
     std::vector<std::tuple<int,int>> updatesBufferParts;
     {
+
         SCOPED_TIMER("PointCloud::doDrawVisual::sceneParsing");
         for(auto visual : visualModels)
         {
@@ -198,9 +205,14 @@ void PointCloudRenderer::doDrawVisual(const sofa::core::visual::VisualParams* vp
                 continue;
             }
 
-            if(!visual->l_geometry->data){
+            if(!visual->data){
                 continue;
             }
+
+            aspect = static_cast<float>(viewport[2]) / viewport[3];
+            bool updateIndices = visual->updateLayout(l_camera, aspect);
+            visual->draw(vparams);
+
 
             auto scale = visual->d_uniformScale.getValue();
             auto& referenceFrames = visual->d_initFrames.getValue();
@@ -212,14 +224,26 @@ void PointCloudRenderer::doDrawVisual(const sofa::core::visual::VisualParams* vp
             if(!dataCache.contains(visual)){
                 int offset = renderingData.xyz.rows();
                 int beginIndex = renderingData.size();
-                int size = visual->l_geometry->data->xyz.rows()*(3+4+3+1+visual->l_geometry->data->sh_dim());
-                dataCache[visual] = std::make_tuple(beginIndex, size);
+                int size = visual->data->xyz.rows()*(3+4+3+1+visual->data->sh_dim());
+                bool enable = visual->d_enable.getValue();
+                int firstIndex;
+                int lastIndex;
 
-                append(renderingData.xyz, visual->l_geometry->data->xyz);
-                append(renderingData.sh, visual->l_geometry->data->sh);
-                append(renderingData.opacity, visual->l_geometry->data->opacity);
-                append(renderingData.scale, visual->l_geometry->data->scale);
-                append(renderingData.rot, visual->l_geometry->data->rot);
+                append(renderingData.xyz, visual->data->xyz);
+                append(renderingData.sh, visual->data->sh);
+                append(renderingData.opacity, visual->data->opacity);
+                append(renderingData.scale, visual->data->scale);
+                append(renderingData.rot, visual->data->rot);
+
+                if (enable) {
+                    auto visual_indices = helper::getReadAccessor(visual->d_indices);
+                    for(int i=0;i<(int)visual_indices.size();i++)
+                    {
+                        indices.push_back(offset + visual_indices[i]);
+                    }
+                    firstIndex = indices.size() - visual_indices.size();
+                    lastIndex = indices.size();
+                }
 
                 std::vector<std::vector<int>> frameMap{frames.size()};
                 for(size_t i=0;i<frameIndices.size();++i)
@@ -231,20 +255,89 @@ void PointCloudRenderer::doDrawVisual(const sofa::core::visual::VisualParams* vp
                 this->transform(scale,
                                 localToGlobalFrames, referenceFrames,
                                 frames, frameMap,
-                                visual->l_geometry->data->xyz, renderingData.xyz,
-                                visual->l_geometry->data->rot, renderingData.rot,
+                                visual->data->xyz, renderingData.xyz,
+                                visual->data->rot, renderingData.rot,
                                 renderingData.scale, offset);
 
                 msg_info() << "Batching a new data set " << visual->getPathName() << " with frames " << frames.size() << msgendl
                            << "         data set offset & size " << beginIndex << ", " << size;
                 updatesBufferParts.push_back({offset,size});
+                dataCache[visual] = std::make_tuple(beginIndex, size, firstIndex, lastIndex, enable);
+                indiceChanged = true;
                 continue;
+            } else if (std::get<4>(dataCache[visual]) != visual->d_enable.getValue()) {
+                SCOPED_TIMER("PointCloud::doDrawVisual::updateEnable");
+                auto& cachedData = dataCache[visual];
+                std::get<4>(cachedData) = visual->d_enable.getValue();
+                auto [offset, size, firstIndex, lastIndex, enable] = cachedData;
+                int visual_size = visual->d_indices.getValue().size();
+                if (enable) {
+                    for(int i=offset; i < offset + visual_size; ++i)
+                    {
+                        indices.push_back(i);
+                    }
+                    std::get<2>(cachedData) = indices.size() - visual_size;
+                    std::get<3>(cachedData) = indices.size();
+                } else {
+                    indices.erase(indices.begin() + firstIndex, indices.begin() + lastIndex);
+                }
+                indiceChanged = true;
             }
-
-            if(visual->d_isStaticModel.getValue())
+            
+            auto [offset, size, firstIndex, lastIndex, enable] = dataCache[visual];
+            updateSh = visual->updateSh(&renderingData, offset);
+            if(visual->d_isStaticModel.getValue() || !enable)
                 continue;
 
-            auto [offset, size] = dataCache[visual];
+            if (updateIndices) {
+                SCOPED_TIMER("PointCloud::doDrawVisual::updateIndices");
+
+                auto localIndices = helper::getReadAccessor(visual->d_indices);
+                const size_t newSize = localIndices.size();
+                const size_t oldSize = lastIndex - firstIndex;
+                const ptrdiff_t diff = static_cast<ptrdiff_t>(newSize) - static_cast<ptrdiff_t>(oldSize);
+
+                if (diff == 0) {
+                    for (size_t i = 0; i < newSize; ++i) {
+                        indices[firstIndex + i] = offset + localIndices[i];
+                    }
+                } 
+                else if (diff < 0) {
+                    for (size_t i = 0; i < newSize; ++i) {
+                        indices[firstIndex + i] = offset + localIndices[i];
+                    }
+                    indices.erase(indices.begin() + firstIndex + newSize, indices.begin() + lastIndex);
+                } 
+                else {
+                    for (size_t i = 0; i < oldSize; ++i) {
+                        indices[firstIndex + i] = offset + localIndices[i];
+                    }
+                    
+                    indices.insert(indices.begin() + lastIndex, diff, 0);
+                    for (size_t i = oldSize; i < newSize; ++i) {
+                        indices[firstIndex + i] = offset + localIndices[i];
+                    }
+                }
+
+                if (diff != 0) {
+                    for (auto& v : visualModels) {
+                        if (v == visual || std::get<3>(dataCache[v]) < firstIndex) continue;
+                        
+                        if (diff > 0) {
+                            std::get<2>(dataCache[v]) += static_cast<size_t>(diff);
+                            std::get<3>(dataCache[v]) += static_cast<size_t>(diff);
+                        } else {
+                            std::get<2>(dataCache[v]) -= static_cast<size_t>(-diff);
+                            std::get<3>(dataCache[v]) -= static_cast<size_t>(-diff);
+                        }
+                    }
+                }
+
+                std::get<2>(dataCache[visual]) = firstIndex;
+                std::get<3>(dataCache[visual]) = firstIndex + newSize;
+
+                indiceChanged = true;
+            }
 
             std::vector<std::vector<int>> frameMap{frames.size()};
             for(size_t i=0;i<frameIndices.size();++i)
@@ -259,8 +352,8 @@ void PointCloudRenderer::doDrawVisual(const sofa::core::visual::VisualParams* vp
                                 localToGlobalFrames,
                                 referenceFrames, frames,
                                 frameMap,
-                                visual->l_geometry->data->xyz, renderingData.xyz,
-                                visual->l_geometry->data->rot, renderingData.rot,
+                                visual->data->xyz, renderingData.xyz,
+                                visual->data->rot, renderingData.rot,
                                 renderingData.scale, offset);
             }
             msg_info() << "Updating point clouds from " << visual->getPathName() << " with frames " << frames.size() << msgendl
@@ -287,7 +380,6 @@ void PointCloudRenderer::doDrawVisual(const sofa::core::visual::VisualParams* vp
 
     float fov = l_camera->getFieldOfView();
     float tanHalfFov = tan((fov / 180.0 * M_PI) / 2.0f);
-    float aspect = static_cast<float>(viewport[2]) / viewport[3];
     Eigen::Vector2f tanxy (aspect * tanHalfFov, tanHalfFov);
     float focal = static_cast<float>(viewport[3]) / (tan((fov / 180.0f * M_PI) / 2.0f) * 2.0f);
 
@@ -298,7 +390,6 @@ void PointCloudRenderer::doDrawVisual(const sofa::core::visual::VisualParams* vp
     defaulttype::Rigid3Types::Coord type;
     {
         SCOPED_TIMER("PointCloud::doDrawVisual::renderingSetupUp");
-
         vparams->drawTool()->pushMatrix();
         float glTransform[16];
         type.writeOpenGlMatrix ( glTransform );
@@ -323,6 +414,7 @@ void PointCloudRenderer::doDrawVisual(const sofa::core::visual::VisualParams* vp
     static bool firstTime = true;
     if(firstTime)
     {
+        SCOPED_TIMER("PointCloud::doDrawVisual::shaderSetup");
         firstTime = false;
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, _ssbo_splat[SplatProperty::SCALE]);
         glBufferData(GL_SHADER_STORAGE_BUFFER, renderingData.scale.rows() * sizeof(float) * 3, renderingData.scale.data(), GL_DYNAMIC_DRAW);
@@ -339,7 +431,6 @@ void PointCloudRenderer::doDrawVisual(const sofa::core::visual::VisualParams* vp
         glBufferData(GL_SHADER_STORAGE_BUFFER, buffer.size()*sizeof(float), buffer.data(), GL_DYNAMIC_DRAW);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, _ssbo_splat[SplatProperty::SPHERICAL_HARMONICS]);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-        indices = range(renderingData.size());
 
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, _ssbo_splat[SplatProperty::POSITION]);
         glBufferData(GL_SHADER_STORAGE_BUFFER, renderingData.xyz.rows() * sizeof(float) * 3, renderingData.xyz.data(), GL_DYNAMIC_DRAW);
@@ -348,6 +439,11 @@ void PointCloudRenderer::doDrawVisual(const sofa::core::visual::VisualParams* vp
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, _ssbo_splat[SplatProperty::ROTATION]);
         glBufferData(GL_SHADER_STORAGE_BUFFER, renderingData.rot.rows() * sizeof(float) * 4, renderingData.rot.data(), GL_DYNAMIC_DRAW);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, _ssbo_splat[SplatProperty::ROTATION]);
+
+        depths.resize(renderingData.xyz.rows());
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, _ssbo_splat[SplatProperty::DEPTHS]);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, depths.size() * sizeof(float), depths.data(), GL_DYNAMIC_DRAW);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, _ssbo_splat[SplatProperty::DEPTHS]);
     }
 
     if(updatesBufferParts.size())
@@ -362,16 +458,21 @@ void PointCloudRenderer::doDrawVisual(const sofa::core::visual::VisualParams* vp
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, _ssbo_splat[SplatProperty::ROTATION]);
     }
 
-    if(depths.size()!=indices.size()){
+    if (updateSh) {
+        SCOPED_TIMER("PointCloud::doDrawVisual::bufferUpdate SPHERICAL HARMONICS");
+
+        auto buffer = renderingData.flat_sh();
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, _ssbo_splat[SplatProperty::SPHERICAL_HARMONICS]);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, buffer.size()*sizeof(float), buffer.data(), GL_DYNAMIC_DRAW);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, _ssbo_splat[SplatProperty::SPHERICAL_HARMONICS]);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    }
+
+    if(indiceChanged) {
         SCOPED_TIMER("PointCloud::doDrawVisual::bufferUpdate INDEX");
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, _ssbo_splat[SplatProperty::INDEX]);
         glBufferData(GL_SHADER_STORAGE_BUFFER, indices.size() * sizeof(int), indices.data(), GL_DYNAMIC_DRAW);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, _ssbo_splat[SplatProperty::INDEX]);
-
-        depths.resize(indices.size());
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, _ssbo_splat[SplatProperty::DEPTHS]);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, depths.size() * sizeof(float), depths.data(), GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, _ssbo_splat[SplatProperty::DEPTHS]);
     }
 
     int splatsToDraw = 0;

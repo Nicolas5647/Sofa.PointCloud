@@ -61,7 +61,7 @@ public:
     void doInitVisual(const sofa::core::visual::VisualParams* vparams) final;
     void doDrawVisual(const sofa::core::visual::VisualParams* vparams) final;
     void doUpdateVisual(const sofa::core::visual::VisualParams* vparams) final;
-
+    
 private:
     GLuint              _vao;
     GLuint              _vbo;
@@ -91,7 +91,7 @@ private:
     std::vector<int> indices;
     std::map<unsigned int, std::vector<int>> directionalIndices;
 
-    std::map<PointCloudVisualModel*, std::tuple<int,int>> dataCache;
+    std::map<PointCloudVisualModel*, std::tuple<int, int, int, int, bool>> dataCache;
 
     std::array<Plane,6 > clipPlanes;
 
