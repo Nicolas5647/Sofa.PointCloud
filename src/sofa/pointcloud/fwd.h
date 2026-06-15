@@ -30,6 +30,7 @@ namespace sofa::pointcloud::components
     class PointCloudVisualModel;
 
     class PointCloudOctreeSelector;
+    class PointCloudOctreeLodSelector;
 }
 
 namespace sofa::core
