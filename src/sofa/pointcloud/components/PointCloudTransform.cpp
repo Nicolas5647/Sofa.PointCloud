@@ -82,7 +82,7 @@ void PointCloudTransform::clear(GaussianData& data)
 
 void PointCloudTransform::append(Eigen::MatrixXf& dest, const Eigen::MatrixXf& src)
 {
-    assert(A.cols() == B.cols());
+    assert(dest.cols() == src.cols());
 
     int oldRows = dest.rows();
     dest.conservativeResize(dest.rows() + src.rows(), src.cols());
@@ -93,7 +93,7 @@ template<unsigned int Size>
 void PointCloudTransform::append(Eigen::Matrix<float, Eigen::Dynamic, Size, Eigen::RowMajor>& dest,
                                  const Eigen::Matrix<float, Eigen::Dynamic, Size, Eigen::RowMajor>& src)
 {
-    assert(A.cols() == B.cols());
+    assert(dest.cols() == src.cols());
 
     int oldRows = dest.rows();
     dest.conservativeResize(dest.rows() + src.rows(), src.cols());
@@ -102,8 +102,9 @@ void PointCloudTransform::append(Eigen::Matrix<float, Eigen::Dynamic, Size, Eige
 
 void PointCloudTransform::append(Eigen::Matrix<float, Eigen::Dynamic, 1>& dest,
                                  const Eigen::Matrix<float, Eigen::Dynamic, 1>& src)
-{
-    assert(A.cols() == B.cols());
+{    
+    assert(dest.cols() == src.cols());
+
 
     int oldRows = dest.rows();
     dest.conservativeResize(dest.rows() + src.rows(), src.cols());
